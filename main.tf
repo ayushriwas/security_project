@@ -3,6 +3,8 @@ provider "aws" {
   region = var.aws_region
 }
 
+# --- VPC and Networking Resources ---
+
 # 1. Create a VPC
 resource "aws_vpc" "security_project_vpc" {
   cidr_block           = var.vpc_cidr
@@ -22,9 +24,9 @@ resource "aws_internet_gateway" "igw" {
 
 # Create a public subnet
 resource "aws_subnet" "public_subnet" {
-  vpc_id                  = aws_vpc.security_project_vpc.id
-  cidr_block              = var.public_subnet_cidr
-  availability_zone       = var.aws_region_az
+  vpc_id              = aws_vpc.security_project_vpc.id
+  cidr_block          = var.public_subnet_cidr
+  availability_zone   = var.aws_region_az
   map_public_ip_on_launch = true
   tags = {
     Name = "Security-Project-Public-Subnet"
@@ -43,8 +45,6 @@ resource "aws_subnet" "private_subnet" {
 
 # Create an Elastic IP for the NAT Gateway
 resource "aws_eip" "nat_gateway_eip" {
-  # The 'vpc = true' argument has been removed
-  # You can add other configurations here if needed
   tags = {
     Name = "nat_gateway_eip"
   }
@@ -102,7 +102,6 @@ resource "aws_security_group" "ec2_sg" {
   vpc_id      = aws_vpc.security_project_vpc.id
   
   # Allow SSH from any IP (for testing)
-  # For production, you should restrict this to a specific IP range
   ingress {
     from_port   = 22
     to_port     = 22
@@ -121,7 +120,7 @@ resource "aws_security_group" "ec2_sg" {
 
 # EC2 instance for the Web Server
 resource "aws_instance" "web_server_instance" {
-  ami           = "ami-0557a3743cba600c0" 
+  ami           = "ami-0557a3743cba600c0"
   instance_type = "t2.micro"
   subnet_id     = aws_subnet.public_subnet.id
   key_name      = var.key_pair_name
@@ -133,7 +132,7 @@ resource "aws_instance" "web_server_instance" {
 
 # EC2 instance for the User
 resource "aws_instance" "user_instance" {
-  ami           = "ami-0557a3743cba600c0" 
+  ami           = "ami-0557a3743cba600c0"
   instance_type = "t2.micro"
   subnet_id     = aws_subnet.public_subnet.id
   key_name      = var.key_pair_name
@@ -145,7 +144,7 @@ resource "aws_instance" "user_instance" {
 
 # EC2 instance for the Attacker
 resource "aws_instance" "attacker_instance" {
-  ami           = "ami-0557a3743cba600c0" 
+  ami           = "ami-0557a3743cba600c0"
   instance_type = "t2.micro"
   subnet_id     = aws_subnet.public_subnet.id
   key_name      = var.key_pair_name
@@ -153,4 +152,25 @@ resource "aws_instance" "attacker_instance" {
   tags = {
     Name = "Attacker-Instance"
   }
+}
+
+# --- VPC Flow Logs Resources to CloudWatch Logs ---
+
+# Data source to reference the existing IAM Role
+data "aws_iam_role" "existing_flow_log_role" {
+  name = "VPCFlowLogRole"
+}
+
+# Data source to retrieve the existing CloudWatch Log Group
+data "aws_cloudwatch_log_group" "existing_log_group" {
+  name = "security-project-flow-logs"
+}
+
+# Create a VPC Flow Log to publish to CloudWatch
+resource "aws_flow_log" "security_project_flow_log" {
+  iam_role_arn         = data.aws_iam_role.existing_flow_log_role.arn
+  log_destination_type = "cloud-watch-logs"
+  log_destination      = data.aws_cloudwatch_log_group.existing_log_group.arn
+  traffic_type         = "ALL"
+  vpc_id               = aws_vpc.security_project_vpc.id
 }

@@ -2,3 +2,6 @@ terraform.tfstate
 terraform.tfstate.backup
 terraform.tfvars.save
 terraform.tfvars
+SecurityProject-Key.pem
+.terraform
+.terraform.lock.hcl
