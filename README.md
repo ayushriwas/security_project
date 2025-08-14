@@ -74,10 +74,6 @@ Flow:
 * Amazon GuardDuty
 * IAM Roles & Policies
 
-## High-Level Architecture
-
-![AWS Threat Detection and Prevention Architecture](architecture-diagram.png)
-
 ## Usage
 
 1. Deploy VPC & EC2 instances.
