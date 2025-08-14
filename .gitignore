@@ -34,3 +34,6 @@ client.conf
 
 # System files
 Thumbs.db
+.terraform/
+*.tfstate*
+.terraform.lock.hcl
