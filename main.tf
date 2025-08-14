@@ -7,7 +7,7 @@ provider "aws" {
 
 # 1. Create a VPC
 resource "aws_vpc" "security_project_vpc" {
-  cidr_block           = var.vpc_cidr
+  cidr_block         = var.vpc_cidr
   enable_dns_hostnames = true
   tags = {
     Name = "Security-Project-VPC"
@@ -24,9 +24,9 @@ resource "aws_internet_gateway" "igw" {
 
 # Create a public subnet
 resource "aws_subnet" "public_subnet" {
-  vpc_id              = aws_vpc.security_project_vpc.id
-  cidr_block          = var.public_subnet_cidr
-  availability_zone   = var.aws_region_az
+  vpc_id            = aws_vpc.security_project_vpc.id
+  cidr_block        = var.public_subnet_cidr
+  availability_zone = var.aws_region_az
   map_public_ip_on_launch = true
   tags = {
     Name = "Security-Project-Public-Subnet"
@@ -95,13 +95,14 @@ resource "aws_route_table_association" "private_rt_association" {
   route_table_id = aws_route_table.private_rt.id
 }
 
-# Security group for the EC2 instance
+# --- Security Groups ---
+
+# Security group for the EC2 instances
 resource "aws_security_group" "ec2_sg" {
   name        = "security-project-ec2-sg"
   description = "Allow SSH inbound traffic"
   vpc_id      = aws_vpc.security_project_vpc.id
   
-  # Allow SSH from any IP (for testing)
   ingress {
     from_port   = 22
     to_port     = 22
@@ -109,7 +110,6 @@ resource "aws_security_group" "ec2_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
   
-  # Allow all outbound traffic
   egress {
     from_port   = 0
     to_port     = 0
@@ -118,55 +118,124 @@ resource "aws_security_group" "ec2_sg" {
   }
 }
 
-# EC2 instance for the Web Server
+# Quarantine security group for isolated instances
+resource "aws_security_group" "quarantine_sg" {
+  name        = "quarantine-sg"
+  description = "Quarantine security group with no rules"
+  vpc_id      = aws_vpc.security_project_vpc.id
+}
+
+# Security group for pfSense (allow WAN/LAN traffic)
+resource "aws_security_group" "pfsense_sg" {
+  name        = "pfsense-sg"
+  description = "Allow WAN/LAN traffic for pfSense"
+  vpc_id      = aws_vpc.security_project_vpc.id
+
+  ingress {
+    from_port   = 0
+    to_port     = 65535
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 0
+    to_port     = 65535
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# --- EC2 Instances ---
+
+# Web Server
 resource "aws_instance" "web_server_instance" {
-  ami           = "ami-0557a3743cba600c0"
+  ami           = "ami-0779caf41f9ba54f0"
   instance_type = "t2.micro"
   subnet_id     = aws_subnet.public_subnet.id
   key_name      = var.key_pair_name
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
-  tags = {
-    Name = "Web-Server-Instance"
-  }
+  tags = { Name = "Web-Server-Instance" }
 }
 
-# EC2 instance for the User
-resource "aws_instance" "user_instance" {
-  ami           = "ami-0557a3743cba600c0"
+# Sysloger (old user_instance)
+resource "aws_instance" "sysloger_instance" {
+  ami           = "ami-0779caf41f9ba54f0"
   instance_type = "t2.micro"
   subnet_id     = aws_subnet.public_subnet.id
   key_name      = var.key_pair_name
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
-  tags = {
-    Name = "User-Instance"
-  }
+  user_data = <<-EOF
+    #!/bin/bash
+	sudo apt-get update
+	sudo apt-get install -y rsyslog amazon-cloudwatch-agent
+    systemctl enable rsyslog
+    systemctl start rsyslog
+    cat <<CWAGENTCONFIG > /opt/aws/amazon-cloudwatch-agent/bin/config.json
+    {
+      "agent": {
+        "run_as_user": "root"
+      },
+      "logs": {
+        "logs_collected": {
+          "files": {
+            "collect_list": [
+              {
+                "file_path": "/var/log/pfsense.log",
+                "log_group_class": "STANDARD",
+                "log_group_name": "pfsense-firewall-logs",
+                "log_stream_name": "{hostname}",
+                "retention_in_days": 5
+              }
+            ]
+          }
+        }
+      }
+    }
+CWAGENTCONFIG
+    /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+      -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json -s
+  EOF
+  tags = { Name = "Sysloger-Instance" }
 }
 
-# EC2 instance for the Attacker
+# Attacker Instance
 resource "aws_instance" "attacker_instance" {
-  ami           = "ami-0557a3743cba600c0"
+  ami           = "ami-0779caf41f9ba54f0"
   instance_type = "t2.micro"
   subnet_id     = aws_subnet.public_subnet.id
   key_name      = var.key_pair_name
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
-  tags = {
-    Name = "Attacker-Instance"
-  }
+  tags = { Name = "Attacker-Instance" }
+}
+
+# pfSense EC2 Instance
+resource "aws_instance" "pfsense_instance" {
+  ami           = var.pfsense_ami_id
+  instance_type = "t3.medium"
+  key_name      = var.key_pair_name
+  subnet_id     = aws_subnet.public_subnet.id
+  associate_public_ip_address = true
+  vpc_security_group_ids = [aws_security_group.pfsense_sg.id]
+  tags = { Name = "pfSense-Instance" }
 }
 
 # --- VPC Flow Logs Resources to CloudWatch Logs ---
-
-# Data source to reference the existing IAM Role
 data "aws_iam_role" "existing_flow_log_role" {
   name = "VPCFlowLogRole"
 }
 
-# Data source to retrieve the existing CloudWatch Log Group
 data "aws_cloudwatch_log_group" "existing_log_group" {
   name = "security-project-flow-logs"
 }
 
-# Create a VPC Flow Log to publish to CloudWatch
 resource "aws_flow_log" "security_project_flow_log" {
   iam_role_arn         = data.aws_iam_role.existing_flow_log_role.arn
   log_destination_type = "cloud-watch-logs"

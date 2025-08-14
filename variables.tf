@@ -32,3 +32,8 @@ variable "key_pair_name" {
   description = "The name of an existing EC2 Key Pair to allow SSH access to the instance"
   type        = string
 }
+
+variable "pfsense_ami_id" {
+  description = "The AMI ID for the pfSense EC2 instance"
+  type        = string
+}

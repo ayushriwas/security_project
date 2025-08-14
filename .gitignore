@@ -1,7 +1,36 @@
-terraform.tfstate
-terraform.tfstate.backup
-terraform.tfvars.save
-terraform.tfvars
-SecurityProject-Key.pem
-.terraform
+# Local Terraform state
+*.tfstate
+*.tfstate.*
+.terraform/
 .terraform.lock.hcl
+
+# Sensitive AWS keys / credentials
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+
+# SSH private keys
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+
+# Cloud config files
+*.tfvars
+*.tfvars.json
+
+# Ignore local config
+*.log
+*.bak
+*.backup
+*.tmp
+*.swp
+.DS_Store
+
+# Client configuration files
+client.conf
+
+# System files
+Thumbs.db
